@@ -1,0 +1,163 @@
+name: BKESIT GitHub product distribution (Render Dock)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/render-dock-contract.mjs"
+      - "scripts/render-dock-contract.test.mjs"
+      - "scripts/ingest-render-dock.mjs"
+      - "scripts/ingest-render-dock.test.mjs"
+      - ".github/workflows/render-dock-distribution.yml"
+  pull_request:
+    paths:
+      - "scripts/render-dock-contract.mjs"
+      - "scripts/render-dock-contract.test.mjs"
+      - "scripts/ingest-render-dock.mjs"
+      - "scripts/ingest-render-dock.test.mjs"
+      - ".github/workflows/render-dock-distribution.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing stable Render Dock GitHub release tag, e.g. v1.0.3"
+        type: string
+        required: true
+      source_sha:
+        description: "Exact 40-character source commit SHA to match the immutable tag"
+        type: string
+        required: true
+      publish:
+        description: "Publish the verified assets to BKESIT GitHub Releases"
+        type: boolean
+        default: false
+        required: true
+      acknowledgement:
+        description: "When publishing, type PUBLISH_RENDER_DOCK_TO_BKESIT"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bkesit-render-dock-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Source contract and integrity unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test scripts/render-dock-contract.test.mjs scripts/ingest-render-dock.test.mjs
+
+
+  verify-published-source:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    name: Read-only full Render Dock v1.0.3 byte verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test scripts/render-dock-contract.test.mjs scripts/ingest-render-dock.test.mjs
+      - name: Verify all existing public source release bytes and image
+        run: node scripts/ingest-render-dock.mjs --tag v1.0.3 --source-sha 7a7c82bf9c7c135b1c744e6ada550cda356e4da4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bkesit-render-dock-v1.0.3-verified-candidate
+          path: dist/bkesit-release/
+          if-no-files-found: error
+          retention-days: 14
+
+  ingest:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    name: Verify source bytes and optionally publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test trusted catalog source
+        run: node --test scripts/render-dock-contract.test.mjs scripts/ingest-render-dock.test.mjs
+      - name: Verify source tag, immutable commit, all artifact bytes and product image
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/ingest-render-dock.mjs --tag "$RELEASE_TAG" --source-sha "$SOURCE_SHA"
+      - name: Retain verified distribution candidate as workflow evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: bkesit-render-dock-distribution-candidate
+          path: dist/bkesit-release/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Confirm explicit BKESIT publishing authorization
+        if: ${{ inputs.publish == true }}
+        env:
+          ACKNOWLEDGEMENT: ${{ inputs.acknowledgement }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$ACKNOWLEDGEMENT" != "PUBLISH_RENDER_DOCK_TO_BKESIT" ]]; then
+            echo "Refusing publication: exact publishing acknowledgement required." >&2
+            exit 1
+          fi
+      - name: Refuse existing target release or tag
+        if: ${{ inputs.publish == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="bke-render-dock-${RELEASE_TAG}"
+          if gh release view "$target" --repo "BKESITSolutions/Software-Catalogs" >/dev/null 2>&1; then
+            echo "Refusing to replace an existing BKESIT release." >&2
+            exit 1
+          fi
+          if gh api "repos/BKESITSolutions/Software-Catalogs/git/ref/tags/$target" >/dev/null 2>&1; then
+            echo "Refusing to replace an existing BKESIT tag." >&2
+            exit 1
+          fi
+      - name: Publish immutable verified files to BKESIT GitHub Releases
+        if: ${{ inputs.publish == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CATALOG_COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="bke-render-dock-${RELEASE_TAG}"
+          gh release create "$target" dist/bkesit-release/* \
+            --repo "BKESITSolutions/Software-Catalogs" \
+            --target "$CATALOG_COMMIT" \
+            --title "Render Dock ${RELEASE_TAG#v} — Windows x64" \
+            --notes "Verified ProjectFreedom product: jan2xo/BKE_RENDER_DOCK, stable $RELEASE_TAG, exact source $SOURCE_SHA. Asset SHA-256/size and pinned product image verified before publication. Downloading does not confer a software license; BKE Licensing governs activation."
+          gh release view "$target" --repo "BKESITSolutions/Software-Catalogs" --json tagName,url,isDraft,isPrerelease,assets
+          echo "Published exact verified Render Dock release: $target" >> "$GITHUB_STEP_SUMMARY"
