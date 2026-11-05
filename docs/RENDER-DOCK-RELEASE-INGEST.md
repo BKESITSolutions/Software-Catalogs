@@ -10,6 +10,8 @@
 
 ## Two safe stages
 
+**Automatic read-only proof:** On the first trusted main merge changing the distribution scripts/workflow, the `verify-published-source` job checks all real files of the existing pinned `v1.0.3` release and retains the full verified candidate as a short-lived CI artifact. It cannot create a GitHub Release or publish customer downloads.
+
 **Verify-only:** GitHub Actions → **BKESIT GitHub product distribution (Render Dock)** → Run workflow on **main** → set:
 - `tag` to `v1.0.3`;
 - `source_sha` to `7a7c82bf9c7c135b1c744e6ada550cda356e4da4`;
