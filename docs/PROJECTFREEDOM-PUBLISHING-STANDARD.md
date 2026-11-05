@@ -60,7 +60,7 @@ The storefront consumes only **verified published** BKESIT assets and stores pri
 - Existing verified real bytes: [BKESIT Actions #41984557827](https://github.com/BKESITSolutions/Software-Catalogs/actions/runs/41984557827), 10 contract tests pass; source binary/image SHA and size verification pass.
 - Existing destination release state at this plan: **none**; no customer-facing publication authorized.
 
-**Source workflow inputs:** `tag=v1.0.3`, `source_sha=7a7c82bf9c7c135b1c744e6ada550cda356e4da4`, `publish=false` for a verification-only destination dispatch. For customer-facing publication, explicit `publish=true` plus exact `acknowledgement=PUBLISH_RENDER_DOCK_TO_BKESIT` is required. The receiving workflow repeats those gates.
+**Source workflow inputs:** `tag=v1.0.3`, `publish=false` for a verification-only destination dispatch. The workflow resolves the **exact source commit SHA** from the tag and forwards it automatically; the optional `source_sha` input can pin it explicitly and reject tag drift (for example, `7a7c82bf9c7c135b1c744e6ada550cda356e4da4`). For customer-facing publication, explicit `publish=true` plus exact `acknowledgement=PUBLISH_RENDER_DOCK_TO_BKESIT` is required. The receiving workflow repeats those gates.
 
 **Known activation blocker:** the GitHub App installation ID/permission and secret configuration are not provisioned or verified by this source change. Until that is done, the source workflow cannot successfully dispatch and must fail closed. A successful source dispatch (HTTP 204) is not proof that the destination job has completed.
 
