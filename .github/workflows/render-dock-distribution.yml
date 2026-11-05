@@ -1,6 +1,14 @@
 name: BKESIT GitHub product distribution (Render Dock)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/render-dock-contract.mjs"
+      - "scripts/render-dock-contract.test.mjs"
+      - "scripts/ingest-render-dock.mjs"
+      - "scripts/ingest-render-dock.test.mjs"
+      - ".github/workflows/render-dock-distribution.yml"
   pull_request:
     paths:
       - "scripts/render-dock-contract.mjs"
@@ -49,6 +57,31 @@ jobs:
         with:
           node-version: "22"
       - run: node --test scripts/render-dock-contract.test.mjs scripts/ingest-render-dock.test.mjs
+
+
+  verify-published-source:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    name: Read-only full Render Dock v1.0.3 byte verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test scripts/render-dock-contract.test.mjs scripts/ingest-render-dock.test.mjs
+      - name: Verify all existing public source release bytes and image
+        run: node scripts/ingest-render-dock.mjs --tag v1.0.3 --source-sha 7a7c82bf9c7c135b1c744e6ada550cda356e4da4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bkesit-render-dock-v1.0.3-verified-candidate
+          path: dist/bkesit-release/
+          if-no-files-found: error
+          retention-days: 14
 
   ingest:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
